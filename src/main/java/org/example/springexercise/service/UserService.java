@@ -4,6 +4,8 @@ import lombok.RequiredArgsConstructor;
 import org.example.springexercise.dto.CreateUserRequestDto;
 import org.example.springexercise.dto.UpdateUserRequestDto;
 import org.example.springexercise.dto.UserResponseDto;
+import org.example.springexercise.dto.event.EventType;
+import org.example.springexercise.dto.event.UserEvent;
 import org.example.springexercise.entity.User;
 import org.example.springexercise.exception.ResourceNotFoundException;
 import org.example.springexercise.mapper.UserMapper;
@@ -20,12 +22,19 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final UserMapper userMapper;
+    private final NotificationProducerService notificationProducer;
+
 
     @Transactional
     public UserResponseDto createUser(CreateUserRequestDto requestDto) {
         validate(requestDto.getName(), requestDto.getEmail(), requestDto.getAge());
         User user = userMapper.toUser(requestDto);
         User savedUser = userRepository.save(user);
+
+        notificationProducer.sendNotificationEvent(
+                new UserEvent(EventType.USER_CREATED, savedUser.getEmail())
+        );
+
         return userMapper.toUserResponseDto(savedUser);
     }
 
@@ -61,10 +70,18 @@ public class UserService {
 
     @Transactional
     public void deleteUser(Long id) {
-        if (!userRepository.existsById(id)) {
-            throw new ResourceNotFoundException("User with ID " + id + " not found.");
-        }
+
+        User userToDelete = userRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("User with ID " + id + " not found."));
+
+        String email = userToDelete.getEmail();
+
         userRepository.deleteById(id);
+
+
+        notificationProducer.sendNotificationEvent(
+                new UserEvent(EventType.USER_DELETED, email)
+        );
     }
 
     private void validate(String name, String email, int age) {
